@@ -1,6 +1,6 @@
 // Description: Simulates paging memory allocation scheme
-// Compile: g++ demand.cpp -std=c++11 -io demand
-//
+// Compile: g++ paged.cpp -std=c++11 -o paged
+
 #include <algorithm>
 #include <array>
 #include <cstdio>
