@@ -191,8 +191,77 @@ int FIFO(MemoryMapTable &MMT, PageMapTable &PMT, queue<int> &fifoQueue,
     return replacedFrame;
 }
 
+// LRU Replacement Algorithm
+int LRU(MemoryMapTable &MMT, PageMapTable &PMT, map<int, int> &lruCounter,
+        int &accessTime, int jobId, int pageNum, int pageSize, int key)
+{
+    for (auto &kv : MMT)
+    {
+        if (!kv.second.busy)
+        {
+            int frameNum = kv.second.pageFrameNumber;
+
+            PMT[key].pageFrameId = frameNum;
+            PMT[key].inMemory = true;
+            kv.second.pageNumber = pageNum;
+            kv.second.jobId = jobId;
+            kv.second.busy = true;
+
+            lruCounter[frameNum] = accessTime++;  // Track access time
+
+            printf(" Loaded into free Frame %d\n", frameNum);
+            return frameNum;
+        }
+    }
+
+    // Find the least recently used frame
+    int lruFrame = -1;
+    int oldestTime = accessTime;
+
+    for (const auto &kv : MMT)
+    {
+        if (kv.second.busy)
+        {
+            int frameNum = kv.second.pageFrameNumber;
+            if (lruCounter[frameNum] < oldestTime)
+            {
+                oldestTime = lruCounter[frameNum];
+                lruFrame = frameNum;
+            }
+        }
+    }
+
+    if (lruFrame == -1)
+    {
+        throw runtime_error("LRU: No frame found for replacement!");
+    }
+
+    int oldJobId = MMT[lruFrame].jobId;
+    int oldPageNum = MMT[lruFrame].pageNumber;
+    int oldKey = oldJobId * 1000 + oldPageNum;
+
+    // Mark old page out of memory
+    PMT[oldKey].inMemory = false;
+    PMT[oldKey].pageFrameId = -1;
+
+    printf(" Replacing Page %d of Job %d (Frame %d) with Page %d of Job %d (LRU)\n",
+           oldPageNum, oldJobId, lruFrame, pageNum, jobId);
+
+    // Load new page into replaced frame
+    PMT[key].pageFrameId = lruFrame;
+    PMT[key].inMemory = true;
+
+    MMT[lruFrame].pageNumber = pageNum;
+    MMT[lruFrame].jobId = jobId;
+    MMT[lruFrame].busy = true;
+
+    lruCounter[lruFrame] = accessTime++;  // Update access time
+
+    return lruFrame;
+}
+
 // Demand Paging Simulation
-void simulateDemandPaging(int numJobs, int numFrames, int pageSize,vector<Job> jobs, vector<vector<Page>> allPages, PageMapTable globalPMT, bool replacement)
+void simulateDemandPaging(int numJobs, int numFrames, int pageSize,vector<Job> jobs, vector<vector<Page>> allPages, PageMapTable &globalPMT, bool replacement)
 {
     // Initialize memory
     MainMemory ram(numFrames);
@@ -219,6 +288,8 @@ void simulateDemandPaging(int numJobs, int numFrames, int pageSize,vector<Job> j
 
     int pageFaults = 0;
     queue<int> fifoQueue;
+    map<int, int> lruCounter; //LRU
+    int accessTime = 0; //LRU 
     int pageHits = 0;
     random_device rnd;
     mt19937 gen(rnd());
@@ -244,6 +315,9 @@ void simulateDemandPaging(int numJobs, int numFrames, int pageSize,vector<Job> j
         {
             printf("HIT (Page already in memory)\n");
             pageHits++;
+            // Update LRU counter on hit
+            int frameId = globalPMT[key].pageFrameId;
+            lruCounter[frameId] = accessTime++;
         }
         else
         {
@@ -282,8 +356,7 @@ void simulateDemandPaging(int numJobs, int numFrames, int pageSize,vector<Job> j
                 }
                 else
                 {
-                    // yaw algorith here
-                    // LRU()
+                    LRU(MMT, globalPMT, lruCounter, accessTime, jobId, pageNum, pageSize, key);
                 }
             }
         }
