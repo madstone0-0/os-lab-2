@@ -196,12 +196,12 @@ int main() {
     addr = rnd() % jobSize;
     printf("Address -> %d\n", addr);
 
-    int pageFrameNumber = addr / pageSize;
+    int pageNumber = addr / pageSize;
     int offset = addr % pageSize;
-    int pageFrameId = PMT[pageFrameNumber].pageFrameId;
+    int pageFrameId = PMT[pageNumber].pageFrameId;
     int physicalAddr = ram[pageFrameId].startingAddr + offset;
-    printf("Page Frame Number -> %d\nOffset -> %d\nPhysical Address -> %d\n",
-           pageFrameNumber, offset, physicalAddr);
+    printf("Page Number -> %d\nOffset -> %d\nPhysical Address -> %d\n",
+           pageNumber, offset, physicalAddr);
     printf("\n");
   }
 }

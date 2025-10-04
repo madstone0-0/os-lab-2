@@ -1,9 +1,11 @@
-// Discription: Simulates Demand Paging with page replacment policies (FIFO & LRU)
-// Compile: g++ demand.cpp -std=c++11 -o demand
+// Discription: Simulates Demand Paging with page replacment policies (FIFO &
+// LRU) Compile: g++ demand.cpp -std=c++11 -o demand
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <numeric>
@@ -12,447 +14,446 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <iomanip>
 
 using namespace std;
 
 // Represent a job with id and size
-struct Job
-{
-    int id{};
-    int size{};
+struct Job {
+  int id{};
+  int size{};
 };
 
 // Represent a page frame in main memory
-struct PageFrame
-{
-    int id{};
-    int startingAddr{};
-    int size{};
-    int jobId{};
+struct PageFrame {
+  int id{};
+  int startingAddr{};
+  int size{};
 };
 
 // Represent a page with id and size
-struct Page
-{
-    int id{};
-    int size{};
-    int jobId{};
+struct Page {
+  int id{};
+  int size{};
 };
 
 // Represensts the main memory as a vector of page frames
 using MainMemory = vector<PageFrame>;
 
 // Page Map Table Row
-struct PageMapTableRow
-{
-    int pageNumber{};
-    int pageFrameId{};
-    bool inMemory{};
-    int jobId{};
+struct PageMapTableRow {
+  int pageNumber{};
+  int pageFrameId{};
+  bool inMemory{};
+  uint8_t referenced{};
 };
 
 // Page Map Table
 using PageMapTable = map<int, PageMapTableRow>;
 
+struct JobTableRow {
+  int id{};
+  int size{};
+  PageMapTable PMT;
+};
+
+using JobTable = map<int, JobTableRow>;
+
 // Memory Map Table Row
-struct MemoryMapTableRow
-{
-    int pageFrameNumber{};
-    int pageNumber{};
-    int jobId{};
-    bool busy{};
+struct MemoryMapTableRow {
+  int jobId{};
+  int pageFrameNumber{};
+  int pageNumber{};
+  bool busy{};
 };
 
 // Memory Map Table
 using MemoryMapTable = map<int, MemoryMapTableRow>;
 
 // Divides a job into pages of given page size
-pair<vector<Page>, PageMapTable> divideIntoPages(const Job &j, int pageSize)
-{
-    auto size = j.size;
-    vector<Page> res;
-    PageMapTable PMT;
+pair<vector<Page>, PageMapTable> divideIntoPages(const Job &j, int pageSize) {
+  auto size = j.size;
+  vector<Page> res;
+  PageMapTable PMT;
 
-    int i{0};
-    while (size >= pageSize)
-    {
-        Page p;
-        p.id = i;
-        p.size = pageSize;
-        p.jobId = j.id;
-        res.push_back(p);
-        size -= pageSize;
-        i++;
-    }
-    if (size != 0)
-    {
-        Page p;
-        p.id = i;
-        p.size = size;
-        p.jobId = j.id;
-        res.push_back(p);
-    }
+  int i{0};
+  while (size >= pageSize) {
+    Page p;
+    p.id = i;
+    p.size = pageSize;
+    res.push_back(p);
+    size -= pageSize;
+    i++;
+  }
+  if (size != 0) {
+    Page p;
+    p.id = i;
+    p.size = size;
+    res.push_back(p);
+  }
 
-    // Build PMT
-    for (const auto &page : res)
-    {
-        int key = j.id * 1000 + page.id;
-        PMT[key].pageNumber = page.id;
-        PMT[key].pageFrameId = -1;
-        PMT[key].inMemory = false;
-        PMT[key].jobId = j.id;
-    }
+  // Build PMT
+  for (const auto &page : res) {
+    PMT[page.id].pageNumber = page.id;
+    PMT[page.id].pageFrameId = -1;
+    PMT[page.id].inMemory = false;
+    PMT[page.id].referenced = 0;
+  }
 
-    return {res, PMT};
+  return {res, PMT};
 }
 
 // Prints the Memory Map Table
-void printMMT(const MemoryMapTable &MMT)
-{
-    printf("MMT:\n");
-    printf("Page Frame Number\tPage Number\tBusy\n");
-    for (const auto kv : MMT)
-    {
-        printf("%d\t\t\t%d\t\t%d\n", kv.second.pageFrameNumber,
-               kv.second.pageNumber, kv.second.busy);
-    }
-    printf("\n");
+void printMMT(const MemoryMapTable &MMT) {
+  printf("MMT:\n");
+  printf("Page Frame Number\tPage Number\tBusy\n");
+  for (const auto kv : MMT) {
+    printf("%d\t\t\t%d\t\t%d\n", kv.second.pageFrameNumber,
+           kv.second.pageNumber, kv.second.busy);
+  }
+  printf("\n");
 }
 
 // Prints the Page Map Table
-void printPMT(const PageMapTable &PMT)
-{
-    printf("PMT:\n");
-    printf("Page Number\tPage Frame ID\n");
-    for (const auto &kv : PMT)
-    {
-        printf("%d\t\t%d\n", kv.second.pageNumber, kv.second.pageFrameId);
-    }
-    printf("\n");
+void printPMT(const PageMapTable &PMT) {
+  printf("PMT:\n");
+  printf("Page Number\tPage Frame ID\n");
+  for (const auto &kv : PMT) {
+    printf("%d\t\t%d\n", kv.second.pageNumber, kv.second.pageFrameId);
+  }
+  printf("\n");
 }
 
 // FIFO Replacement Algo
-int FIFO(MemoryMapTable &MMT, PageMapTable &PMT, queue<int> &fifoQueue,
-         int jobId, int pageNum, int pageSize, int key)
-{
+int FIFO(JobTable &JT, MemoryMapTable &MMT, queue<int> &fifoQueue, int jobId,
+         int pageNum, int pageSize) {
 
-    // Scenario where we have free frame: no need for replaceing
-    for (auto &kv : MMT)
-    {
-        if (!kv.second.busy)
-        {
-            int frameNum = kv.second.pageFrameNumber;
+  // Scenario where we have free frame: no need for replaceing
+  for (auto &kv : MMT) {
+    if (!kv.second.busy) {
+      int frameNum = kv.second.pageFrameNumber;
 
-            PMT[key].pageFrameId = frameNum;
-            PMT[key].inMemory = true;
+      JT[jobId].PMT[pageNum].pageFrameId = frameNum;
+      JT[jobId].PMT[pageNum].inMemory = true;
 
-            kv.second.pageNumber = pageNum;
-            kv.second.jobId = jobId;
-            kv.second.busy = true;
+      kv.second.pageNumber = pageNum;
+      kv.second.busy = true;
+      kv.second.jobId = jobId;
 
-            fifoQueue.push(frameNum);
+      fifoQueue.push(frameNum);
 
-            printf(" Loaded into free Frame %d\n", frameNum);
-            return frameNum;
-        }
+      printf(" Loaded into free Frame %d\n", frameNum);
+      return frameNum;
     }
+  }
 
-    // If we don't have a free frame replace
-    if (fifoQueue.empty())
-    {
-        throw runtime_error("FIFO queue is empty — memory not initialized correctly!");
-    }
+  // If we don't have a free frame replace
+  if (fifoQueue.empty()) {
+    throw runtime_error(
+        "FIFO queue is empty — memory not initialized correctly!");
+  }
 
-    int replacedFrame = fifoQueue.front();
-    fifoQueue.pop();
+  int replacedFrame = fifoQueue.front();
+  fifoQueue.pop();
 
-    int oldJobId = MMT[replacedFrame].jobId;
-    int oldPageNum = MMT[replacedFrame].pageNumber;
-    int oldKey = oldJobId * 1000 + oldPageNum;
+  int oldJobId = MMT[replacedFrame].jobId;
+  int oldPageNum = MMT[replacedFrame].pageNumber;
 
-    // mark oldest out of memory
-    PMT[oldKey].inMemory = false;
-    PMT[oldKey].pageFrameId = -1;
+  // mark oldest out of memory
+  JT[oldJobId].PMT[oldPageNum].inMemory = false;
+  JT[oldJobId].PMT[oldPageNum].pageFrameId = -1;
 
-    printf(" Replacing Page %d of Job %d (Frame %d) with Page %d of Job %d\n",
-           oldPageNum, oldJobId, replacedFrame, pageNum, jobId);
+  printf("\tReplacing P%d J%d (F%d) with P%d of J%d (FIFO)\n", oldPageNum,
+         oldJobId, replacedFrame, pageNum, jobId);
 
-    // Load new page into replaced frame
-    PMT[key].pageFrameId = replacedFrame;
-    PMT[key].inMemory = true;
+  // Load new page into replaced frame
+  JT[jobId].PMT[pageNum].pageFrameId = replacedFrame;
+  JT[jobId].PMT[pageNum].inMemory = true;
 
-    MMT[replacedFrame].pageNumber = pageNum;
-    MMT[replacedFrame].jobId = jobId;
-    MMT[replacedFrame].busy = true;
+  MMT[replacedFrame].pageNumber = pageNum;
+  MMT[replacedFrame].jobId = jobId;
+  MMT[replacedFrame].busy = true;
 
-    fifoQueue.push(replacedFrame);
+  fifoQueue.push(replacedFrame);
 
-    return replacedFrame;
+  return replacedFrame;
 }
 
 // LRU Replacement Algorithm
-int LRU(MemoryMapTable &MMT, PageMapTable &PMT, map<int, int> &lruCounter,
-        int &accessTime, int jobId, int pageNum, int pageSize, int key)
-{
-    for (auto &kv : MMT)
-    {
-        if (!kv.second.busy)
-        {
-            int frameNum = kv.second.pageFrameNumber;
+int LRU(JobTable &JT, MemoryMapTable &MMT, int jobId, int pageNum,
+        int pageSize) {
+  for (auto &kv : MMT) {
+    if (!kv.second.busy) {
+      int frameNum = kv.second.pageFrameNumber;
 
-            PMT[key].pageFrameId = frameNum;
-            PMT[key].inMemory = true;
-            kv.second.pageNumber = pageNum;
-            kv.second.jobId = jobId;
-            kv.second.busy = true;
+      JT[jobId].PMT[pageNum].pageFrameId = frameNum;
+      JT[jobId].PMT[pageNum].inMemory = true;
+      JT[jobId].PMT[pageNum].referenced = 0x80; // Set MSB on reference
 
-            lruCounter[frameNum] = accessTime++;  // Track access time
+      kv.second.pageNumber = pageNum;
+      kv.second.jobId = jobId;
+      kv.second.busy = true;
 
-            printf(" Loaded into free Frame %d\n", frameNum);
-            return frameNum;
-        }
+      printf(" Loaded into free Frame %d\n", frameNum);
+      return frameNum;
     }
+  }
 
-    // Find the least recently used frame
-    int lruFrame = -1;
-    int oldestTime = accessTime;
+  // Find the least recently used frame
+  int lruFrame = -1;
+  uint8_t smallestRef = 0xFF;
 
-    for (const auto &kv : MMT)
-    {
-        if (kv.second.busy)
-        {
-            int frameNum = kv.second.pageFrameNumber;
-            if (lruCounter[frameNum] < oldestTime)
-            {
-                oldestTime = lruCounter[frameNum];
-                lruFrame = frameNum;
-            }
-        }
+  for (const auto &kv : MMT) {
+    if (kv.second.busy) {
+      int residentJobId = kv.second.jobId;
+      int residentPageNumber = kv.second.pageNumber;
+      auto ref = JT[residentJobId].PMT[residentPageNumber].referenced;
+      if (ref < smallestRef) {
+        smallestRef = JT[residentJobId].PMT[residentPageNumber].referenced;
+        lruFrame = kv.second.pageFrameNumber;
+      }
     }
+  }
 
-    if (lruFrame == -1)
-    {
-        throw runtime_error("LRU: No frame found for replacement!");
-    }
+  if (lruFrame == -1) {
+    throw runtime_error("LRU: No frame found for replacement!");
+  }
 
-    int oldJobId = MMT[lruFrame].jobId;
-    int oldPageNum = MMT[lruFrame].pageNumber;
-    int oldKey = oldJobId * 1000 + oldPageNum;
+  int oldJobId = MMT[lruFrame].jobId;
+  int oldPageNum = MMT[lruFrame].pageNumber;
 
-    // Mark old page out of memory
-    PMT[oldKey].inMemory = false;
-    PMT[oldKey].pageFrameId = -1;
+  // Mark old page out of memory
+  JT[oldJobId].PMT[oldPageNum].inMemory = false;
+  JT[oldJobId].PMT[oldPageNum].pageFrameId = -1;
+  JT[oldJobId].PMT[oldPageNum].referenced = 0; // Clear reference
 
-    printf(" Replacing Page %d of Job %d (Frame %d) with Page %d of Job %d (LRU)\n",
-           oldPageNum, oldJobId, lruFrame, pageNum, jobId);
+  printf("\tReplacing P%d of J%d (F%d) with P%d of J%d (LRU)\n", oldPageNum,
+         oldJobId, lruFrame, pageNum, jobId);
 
-    // Load new page into replaced frame
-    PMT[key].pageFrameId = lruFrame;
-    PMT[key].inMemory = true;
+  // Load new page into replaced frame
+  JT[jobId].PMT[pageNum].pageFrameId = lruFrame;
+  JT[jobId].PMT[pageNum].inMemory = true;
+  JT[jobId].PMT[pageNum].referenced = 0x80; // Set MSB on reference
 
-    MMT[lruFrame].pageNumber = pageNum;
-    MMT[lruFrame].jobId = jobId;
-    MMT[lruFrame].busy = true;
+  MMT[lruFrame].pageNumber = pageNum;
+  MMT[lruFrame].jobId = jobId;
+  MMT[lruFrame].busy = true;
 
-    lruCounter[lruFrame] = accessTime++;  // Update access time
-
-    return lruFrame;
+  return lruFrame;
 }
+
+struct Stats {
+  int pageFrames{};
+  double failRatio{};
+  double successRatio{};
+  int numAccesses{};
+  int pageFaults{};
+  int pageHits{};
+};
 
 // Demand Paging Simulation
-void simulateDemandPaging(int numJobs, int numFrames, int pageSize,vector<Job> jobs, vector<vector<Page>> allPages, PageMapTable &globalPMT, bool replacement)
-{
-    // Initialize memory
-    MainMemory ram(numFrames);
-    MemoryMapTable MMT;
+Stats simulateDemandPaging(int numJobs, int numFrames, int pageSize,
+                           int numAccesses, vector<Job> jobs,
+                           bool replacement) {
+  // Divide all jobs into pages
+  JobTable JT;
+  int totalPages = 0;
 
-    for (int i = 0; i < numFrames; i++)
-    {
-        ram[i].id = i;
-        ram[i].size = pageSize;
-        ram[i].startingAddr = i * pageSize;
-        ram[i].jobId = -1;
+  printf("\n--- Dividing Jobs into Pages ---\n");
+  for (const auto &job : jobs) {
+    auto divRes = divideIntoPages(job, pageSize);
+    auto &pages = divRes.first;
+    auto &pmt = divRes.second;
+    JT[job.id].id = job.id;
+    JT[job.id].size = job.size;
+    JT[job.id].PMT = pmt;
 
-        MMT[i].pageFrameNumber = i;
-        MMT[i].pageNumber = -1;
-        MMT[i].jobId = -1;
-        MMT[i].busy = false;
+    printf("\nJob %d divided into %zu pages:\n", job.id, pages.size());
+    for (const auto &page : pages) {
+      printf(" Page %d: %d KB\n", page.id, page.size);
+      totalPages++;
     }
 
-    printMMT(MMT);
+    int internalFrag = pageSize - pages.back().size;
+    if (internalFrag > 0) {
+      printf(" Internal Fragmentation in last page: %d KB\n", internalFrag);
+    }
+  }
 
-    // Simulate page requests (demand paging)
-    printf("\n--- Simulating Demand Paging ---\n");
-    printf("Pages are loaded into memory only when accessed.\n\n");
+  printf("\nTotal pages across all jobs: %d\n", totalPages);
+  printf("Available memory frames: %d\n", numFrames);
 
-    int pageFaults = 0;
-    queue<int> fifoQueue;
-    map<int, int> lruCounter; //LRU
-    int accessTime = 0; //LRU 
-    int pageHits = 0;
-    random_device rnd;
-    mt19937 gen(rnd());
+  // Initialize memory
+  MainMemory ram(numFrames);
+  MemoryMapTable MMT;
 
-    // Generate some random page acesses
-    int numAccesses;
-    cout << "Enter number of page accesses to simulate: ";
-    cin >> numAccesses;
+  for (int i = 0; i < numFrames; i++) {
+    ram[i].id = i;
+    ram[i].size = pageSize;
+    ram[i].startingAddr = i * pageSize;
 
-    for (int access = 0; access < numAccesses; access++)
-    {
-        // Randomly select a job and page
-        int jobIdx = gen() % numJobs;
-        int pageIdx = gen() % allPages[jobIdx].size();
-        int jobId = jobs[jobIdx].id;
-        int pageNum = allPages[jobIdx][pageIdx].id;
-        int key = jobId * 1000 + pageNum;
+    MMT[i].pageFrameNumber = i;
+    MMT[i].pageNumber = -1;
+    MMT[i].jobId = -1;
+    MMT[i].busy = false;
+  }
 
-        printf("Access %d: Job %d, Page %d : ", access + 1, jobId, pageNum);
+  printMMT(MMT);
 
-        // Check if page is in memory
-        if (globalPMT[key].inMemory)
-        {
-            printf("HIT (Page already in memory)\n");
-            pageHits++;
-            // Update LRU counter on hit
-            int frameId = globalPMT[key].pageFrameId;
-            lruCounter[frameId] = accessTime++;
-        }
-        else
-        {
-            printf("Page Fault ..... Loading page into memory\n");
-            pageFaults++;
+  // Simulate page requests (demand paging)
+  printf("\n--- Simulating Demand Paging ---\n");
+  printf("Pages are loaded into memory only when accessed.\n\n");
 
-            // Find an empty frame
-            int emptyFrame = -1;
-            for (int i = 0; i < numFrames; i++)
-            {
-                if (!MMT[i].busy)
-                {
-                    emptyFrame = i;
-                    break;
-                }
-            }
+  int pageFaults = 0;
+  queue<int> fifoQueue;
+  int pageHits = 0;
+  random_device rnd;
+  mt19937 gen(rnd());
+  uniform_int_distribution<> jobDist(0, numJobs - 1);
 
-            if (emptyFrame != -1)
-            {
-                // Load page into empty frame
-                globalPMT[key].pageFrameId = emptyFrame;
-                globalPMT[key].inMemory = true;
+  for (int access = 0; access < numAccesses; access++) {
+    // Randomly select a job and page
+    int jobId = jobDist(gen);
+    auto &job = JT[jobId];
+    vector<int> pageKeys;
+    for (const auto &kv : job.PMT)
+      pageKeys.push_back(kv.first);
+    if (pageKeys.empty())
+      continue;
+    uniform_int_distribution<> pageDist(0, (int)pageKeys.size() - 1);
+    int pageNum = pageKeys[pageDist(gen)];
 
-                MMT[emptyFrame].pageNumber = pageNum;
-                MMT[emptyFrame].jobId = jobId;
-                MMT[emptyFrame].busy = true;
+    printf("Access %d: J%d, P%d : ", access + 1, jobId, pageNum);
 
-                fifoQueue.push(emptyFrame);
-                printf(" Loaded into Frame %d\n", emptyFrame);
-            }
-            else
-            {
-                if (replacement)
-                {
-                    FIFO(MMT, globalPMT, fifoQueue, jobId, pageNum, pageSize, key);
-                }
-                else
-                {
-                    LRU(MMT, globalPMT, lruCounter, accessTime, jobId, pageNum, pageSize, key);
-                }
-            }
-        }
+    auto &PMT = JT[jobId].PMT;
+    auto &page = PMT[pageNum];
+
+    if (!replacement) {
+      // Age all pages' referenced bits (for LRU)
+      for (auto &kv : JT)
+        for (auto &pkv : kv.second.PMT)
+          if (pkv.second.inMemory)
+            pkv.second.referenced >>= 1; // Shift right one bit
     }
 
-    // Print final state
-    printMMT(MMT);
-    printPMT(globalPMT);
+    // Check if page is in memory
+    if (page.inMemory) {
+      printf("HIT\n");
+      pageHits++;
+      page.referenced |= 0x80; // Set MSB on reference
 
-    printf("\n--- Demand Paging Results ---\n");
-    printf("Total Accesses: %d\n", numAccesses);
-    printf("Page Faults: %d\n", pageFaults);
-    printf("Page Hits: %d\n", pageHits);
-    printf("Page Fault Rate: %.2f%%\n", (double)pageFaults / numAccesses * 100);
+    } else {
+      printf("FAULT\n");
+      pageFaults++;
+
+      // Find an empty frame
+      int emptyFrame = -1;
+      for (int i = 0; i < numFrames; i++) {
+        if (!MMT[i].busy) {
+          emptyFrame = i;
+          break;
+        }
+      }
+
+      if (emptyFrame != -1) {
+        // Load page into empty frame
+        page.pageFrameId = emptyFrame;
+        page.inMemory = true;
+        page.referenced = 0x80; // Set MSB on reference
+
+        MMT[emptyFrame].pageNumber = pageNum;
+        MMT[emptyFrame].jobId = jobId;
+        MMT[emptyFrame].busy = true;
+
+        fifoQueue.push(emptyFrame);
+        printf("\tLoaded F%d\n", emptyFrame);
+      } else {
+        if (replacement) {
+          FIFO(JT, MMT, fifoQueue, jobId, pageNum, pageSize);
+        } else {
+          LRU(JT, MMT, jobId, pageNum, pageSize);
+        }
+      }
+    }
+  }
+
+  // Print final state
+  printMMT(MMT);
+  for (const auto &kv : JT) {
+    printf("Final PMT for Job %d:\n", kv.first);
+    printPMT(kv.second.PMT);
+  }
+
+  double failRatio = (double)pageFaults / numAccesses;
+  double successRatio = (double)(numAccesses - pageFaults) / numAccesses;
+  Stats s;
+  s.pageFrames = numFrames;
+  s.failRatio = failRatio;
+  s.successRatio = successRatio;
+  s.numAccesses = numAccesses;
+  s.pageFaults = pageFaults;
+  s.pageHits = pageHits;
+
+  return s;
 }
 
+int main() {
+  printf("Demand Paged Memory Allocation\n");
 
+  int pageSize, numJobs, numFrames;
 
-int main()
-{
-     printf("Demand Paged Memory Allocation\n");
+  cout << "Enter Page Size: ";
+  cin >> pageSize;
 
-    int pageSize, numJobs, numFrames;
+  cout << "Enter number of jobs: ";
+  cin >> numJobs;
 
-    cout << "Enter Page Size: ";
-    cin >> pageSize;
+  cout << "Enter number of available memory frames: ";
+  cin >> numFrames;
 
-    cout << "Enter number of jobs: ";
-    cin >> numJobs;
+  // Generate some random page acesses
+  int numAccesses;
+  cout << "Enter number of page accesses to simulate: ";
+  cin >> numAccesses;
 
-    cout << "Enter number of available memory frames: ";
-    cin >> numFrames;
+  if (pageSize <= 0 || numJobs <= 0 || numFrames <= 0 || numAccesses <= 0) {
+    printf("Error: All values must be positive!\n");
+    return 1;
+  }
 
-    if (pageSize <= 0 || numJobs <= 0 || numFrames <= 0)
-    {
-        printf("Error: All values must be positive!\n");
-        return 1;
+  // Accept jobs
+  vector<Job> jobs;
+  for (int i = 0; i < numJobs; i++) {
+    Job j;
+    j.id = i;
+    cout << "Enter size of Job " << j.id << " : ";
+    cin >> j.size;
+    if (j.size <= 0) {
+      printf("Error: Job size must be positive!\n");
+      return 1;
     }
+    jobs.push_back(j);
+  }
 
-    // Accept jobs
-    vector<Job> jobs;
-    for (int i = 0; i < numJobs; i++)
-    {
-        Job j;
-        j.id = i + 1;
-        cout << "Enter size of Job " << j.id << " : ";
-        cin >> j.size;
-        if (j.size <= 0)
-        {
-            printf("Error: Job size must be positive!\n");
-            return 1;
-        }
-        jobs.push_back(j);
-    }
+  printf("\n--- Jobs Summary ---\n");
+  for (const auto &job : jobs) {
+    printf("Job %d: %d KB\n", job.id, job.size);
+  }
 
-    printf("\n--- Jobs Summary ---\n");
-    for (const auto &job : jobs)
-    {
-        printf("Job %d: %d KB\n", job.id, job.size);
-    }
-    // Divide all jobs into pages
-    vector<vector<Page>> allPages; // TODO: Replace with job table later
-    PageMapTable globalPMT;
-    int totalPages = 0;
+  printf("\n--- FIFO Page Replacement ---\n");
+  auto fifoStats = simulateDemandPaging(numJobs, numFrames, pageSize,
+                                        numAccesses, jobs, true);
+  printf("Total Accesses: %d\n", fifoStats.numAccesses);
+  printf("Page Faults: %d\n", fifoStats.pageFaults);
+  printf("Page Hits: %d\n", fifoStats.pageHits);
+  printf("Failure Ratio: %.2f\n", fifoStats.failRatio);
+  printf("Success Ratio: %.2f\n", fifoStats.successRatio);
 
-    printf("\n--- Dividing Jobs into Pages ---\n");
-    for (const auto &job : jobs)
-    {
-        auto divRes = divideIntoPages(job, pageSize);
-        auto &pages = divRes.first;
-        auto &pmt = divRes.second;
-        allPages.push_back(pages);
-
-        // Merge into global PMT
-        for (const auto &kv : pmt)
-        {
-            globalPMT[kv.first] = kv.second;
-        }
-
-        printf("\nJob %d divided into %zu pages:\n", job.id, pages.size());
-        for (const auto &page : pages)
-        {
-            printf(" Page %d: %d KB\n", page.id, page.size);
-            totalPages++;
-        }
-
-        int internalFrag = pageSize - pages.back().size;
-        if (internalFrag > 0)
-        {
-            printf(" Internal Fragmentation in last page: %d KB\n", internalFrag);
-        }
-    }
-
-    printf("\nTotal pages across all jobs: %d\n", totalPages);
-    printf("Available memory frames: %d\n", numFrames);
-
-    printf("\nFIFO Page Replacement\n\n");
-    simulateDemandPaging(numJobs, numFrames, pageSize, jobs, allPages, globalPMT, true);
+  printf("\n--- LRU Page Replacement ---\n");
+  auto lruStats = simulateDemandPaging(numJobs, numFrames, pageSize,
+                                       numAccesses, jobs, false);
+  printf("Total Accesses: %d\n", lruStats.numAccesses);
+  printf("Page Faults: %d\n", lruStats.pageFaults);
+  printf("Page Hits: %d\n", lruStats.pageHits);
+  printf("Failure Ratio: %.2f\n", lruStats.failRatio);
+  printf("Success Ratio: %.2f\n", lruStats.successRatio);
 }
