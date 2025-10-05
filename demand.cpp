@@ -1,18 +1,15 @@
-// Discription: Simulates Demand Paging with page replacment policies (FIFO &
-// LRU) Compile: g++ demand.cpp -std=c++11 -o demand
+// Description: Simulates Demand Paging with page replacement policies (FIFO &
+// LRU)
+//
+// Compile: g++ demand.cpp -std=c++11 -o demand
 
-#include <algorithm>
 #include <cstdint>
 #include <cstdio>
-#include <exception>
-#include <iomanip>
 #include <iostream>
 #include <map>
-#include <numeric>
 #include <queue>
 #include <random>
 #include <stdexcept>
-#include <string>
 #include <vector>
 
 using namespace std;
@@ -36,7 +33,7 @@ struct Page {
   int size{};
 };
 
-// Represensts the main memory as a vector of page frames
+// Represents the main memory as a vector of page frames
 using MainMemory = vector<PageFrame>;
 
 // Page Map Table Row
@@ -50,12 +47,14 @@ struct PageMapTableRow {
 // Page Map Table
 using PageMapTable = map<int, PageMapTableRow>;
 
+// Job Table Row
 struct JobTableRow {
   int id{};
   int size{};
   PageMapTable PMT;
 };
 
+// Job Table
 using JobTable = map<int, JobTableRow>;
 
 // Memory Map Table Row
@@ -116,18 +115,19 @@ void printMMT(const MemoryMapTable &MMT) {
 // Prints the Page Map Table
 void printPMT(const PageMapTable &PMT) {
   printf("PMT:\n");
-  printf("Page Number\tPage Frame ID\n");
+  printf("Page Number\tPage Frame ID\tReference Bit\n");
   for (const auto &kv : PMT) {
-    printf("%d\t\t%d\n", kv.second.pageNumber, kv.second.pageFrameId);
+    printf("%d\t\t%d\t\t0b%08b\n", kv.second.pageNumber, kv.second.pageFrameId,
+           kv.second.referenced);
   }
   printf("\n");
 }
 
-// FIFO Replacement Algo
+// FIFO Replacement Algorithm
 int FIFO(JobTable &JT, MemoryMapTable &MMT, queue<int> &fifoQueue, int jobId,
          int pageNum, int pageSize) {
 
-  // Scenario where we have free frame: no need for replaceing
+  // Scenario where we have free frame: no need for replacing
   for (auto &kv : MMT) {
     if (!kv.second.busy) {
       int frameNum = kv.second.pageFrameNumber;
@@ -327,13 +327,11 @@ Stats simulateDemandPaging(int numJobs, int numFrames, int pageSize,
     auto &PMT = JT[jobId].PMT;
     auto &page = PMT[pageNum];
 
-    if (!replacement) {
-      // Age all pages' referenced bits (for LRU)
-      for (auto &kv : JT)
-        for (auto &pkv : kv.second.PMT)
-          if (pkv.second.inMemory)
-            pkv.second.referenced >>= 1; // Shift right one bit
-    }
+    // Age all pages' referenced bits (for LRU)
+    for (auto &kv : JT)
+      for (auto &pkv : kv.second.PMT)
+        if (pkv.second.inMemory)
+          pkv.second.referenced >>= 1; // Shift right one bit
 
     // Check if page is in memory
     if (page.inMemory) {
@@ -410,7 +408,7 @@ int main() {
   cout << "Enter number of available memory frames: ";
   cin >> numFrames;
 
-  // Generate some random page acesses
+  // Generate some random page accesses
   int numAccesses;
   cout << "Enter number of page accesses to simulate: ";
   cin >> numAccesses;

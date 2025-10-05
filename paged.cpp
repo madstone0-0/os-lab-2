@@ -2,7 +2,6 @@
 // Compile: g++ paged.cpp -std=c++11 -o paged
 
 #include <algorithm>
-#include <array>
 #include <cstdio>
 #include <exception>
 #include <iostream>
