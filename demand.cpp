@@ -269,13 +269,13 @@ Stats simulateDemandPaging(int numJobs, int numFrames, int pageSize,
 
     printf("\nJob %d divided into %zu pages:\n", job.id, pages.size());
     for (const auto &page : pages) {
-      printf(" Page %d: %d KB\n", page.id, page.size);
+      printf(" Page %d: %d K\n", page.id, page.size);
       totalPages++;
     }
 
     int internalFrag = pageSize - pages.back().size;
     if (internalFrag > 0) {
-      printf(" Internal Fragmentation in last page: %d KB\n", internalFrag);
+      printf(" Internal Fragmentation in last page: %d K\n", internalFrag);
     }
   }
 
@@ -395,63 +395,66 @@ Stats simulateDemandPaging(int numJobs, int numFrames, int pageSize,
 }
 
 int main() {
-  printf("Demand Paged Memory Allocation\n");
+  try {
+    printf("Demand Paged Memory Allocation\n");
 
-  int pageSize, numJobs, numFrames;
+    int pageSize, numJobs, numFrames;
 
-  cout << "Enter Page Size: ";
-  cin >> pageSize;
+    cout << "Enter Page Size: ";
+    cin >> pageSize;
 
-  cout << "Enter number of jobs: ";
-  cin >> numJobs;
+    cout << "Enter number of jobs: ";
+    cin >> numJobs;
 
-  cout << "Enter number of available memory frames: ";
-  cin >> numFrames;
+    cout << "Enter number of available memory frames: ";
+    cin >> numFrames;
 
-  // Generate some random page accesses
-  int numAccesses;
-  cout << "Enter number of page accesses to simulate: ";
-  cin >> numAccesses;
+    // Generate some random page accesses
+    int numAccesses;
+    cout << "Enter number of page accesses to simulate: ";
+    cin >> numAccesses;
 
-  if (pageSize <= 0 || numJobs <= 0 || numFrames <= 0 || numAccesses <= 0) {
-    printf("Error: All values must be positive!\n");
+    if (pageSize <= 0 || numJobs <= 0 || numFrames <= 0 || numAccesses <= 0) {
+      throw runtime_error("All inputs must be positive integers!");
+    }
+
+    // Accept jobs
+    vector<Job> jobs;
+    for (int i = 0; i < numJobs; i++) {
+      Job j;
+      j.id = i;
+      cout << "Enter size of Job " << j.id << " : ";
+      cin >> j.size;
+      if (j.size <= 0) {
+        throw runtime_error("Job size must be a positive integer!");
+      }
+      jobs.push_back(j);
+    }
+
+    printf("\n--- Jobs Summary ---\n");
+    for (const auto &job : jobs) {
+      printf("Job %d: %d K\n", job.id, job.size);
+    }
+
+    printf("\n--- FIFO Page Replacement ---\n");
+    auto fifoStats = simulateDemandPaging(numJobs, numFrames, pageSize,
+                                          numAccesses, jobs, true);
+    printf("Total Accesses: %d\n", fifoStats.numAccesses);
+    printf("Page Faults: %d\n", fifoStats.pageFaults);
+    printf("Page Hits: %d\n", fifoStats.pageHits);
+    printf("Failure Ratio: %.2f\n", fifoStats.failRatio);
+    printf("Success Ratio: %.2f\n", fifoStats.successRatio);
+
+    printf("\n--- LRU Page Replacement ---\n");
+    auto lruStats = simulateDemandPaging(numJobs, numFrames, pageSize,
+                                         numAccesses, jobs, false);
+    printf("Total Accesses: %d\n", lruStats.numAccesses);
+    printf("Page Faults: %d\n", lruStats.pageFaults);
+    printf("Page Hits: %d\n", lruStats.pageHits);
+    printf("Failure Ratio: %.2f\n", lruStats.failRatio);
+    printf("Success Ratio: %.2f\n", lruStats.successRatio);
+  } catch (const exception &e) {
+    printf("Error: %s\n", e.what());
     return 1;
   }
-
-  // Accept jobs
-  vector<Job> jobs;
-  for (int i = 0; i < numJobs; i++) {
-    Job j;
-    j.id = i;
-    cout << "Enter size of Job " << j.id << " : ";
-    cin >> j.size;
-    if (j.size <= 0) {
-      printf("Error: Job size must be positive!\n");
-      return 1;
-    }
-    jobs.push_back(j);
-  }
-
-  printf("\n--- Jobs Summary ---\n");
-  for (const auto &job : jobs) {
-    printf("Job %d: %d KB\n", job.id, job.size);
-  }
-
-  printf("\n--- FIFO Page Replacement ---\n");
-  auto fifoStats = simulateDemandPaging(numJobs, numFrames, pageSize,
-                                        numAccesses, jobs, true);
-  printf("Total Accesses: %d\n", fifoStats.numAccesses);
-  printf("Page Faults: %d\n", fifoStats.pageFaults);
-  printf("Page Hits: %d\n", fifoStats.pageHits);
-  printf("Failure Ratio: %.2f\n", fifoStats.failRatio);
-  printf("Success Ratio: %.2f\n", fifoStats.successRatio);
-
-  printf("\n--- LRU Page Replacement ---\n");
-  auto lruStats = simulateDemandPaging(numJobs, numFrames, pageSize,
-                                       numAccesses, jobs, false);
-  printf("Total Accesses: %d\n", lruStats.numAccesses);
-  printf("Page Faults: %d\n", lruStats.pageFaults);
-  printf("Page Hits: %d\n", lruStats.pageHits);
-  printf("Failure Ratio: %.2f\n", lruStats.failRatio);
-  printf("Success Ratio: %.2f\n", lruStats.successRatio);
 }

@@ -108,99 +108,104 @@ void printPMT(const PageMapTable &PMT) {
 }
 
 int main() {
-  // Input page size and job size
-  string pageSizeStr;
-  int pageSize{};
-  string jobSizeStr;
-  int jobSize{};
-
-  cout << "Enter page size -> ";
-  cin >> pageSizeStr;
-  cout << "Enter job size -> ";
-  cin >> jobSizeStr;
   try {
-    pageSize = std::stoi(pageSizeStr);
-    if (pageSize <= 0)
-      throw invalid_argument{"Page size must be positive and greater than 0"};
-    jobSize = std::stoi(jobSizeStr);
-    if (jobSize <= 0)
-      throw invalid_argument{"Job size must be positive and greater than 0"};
+    // Input page size and job size
+    string pageSizeStr;
+    int pageSize{};
+    string jobSizeStr;
+    int jobSize{};
+
+    cout << "Enter page size -> ";
+    cin >> pageSizeStr;
+    cout << "Enter job size -> ";
+    cin >> jobSizeStr;
+    try {
+      pageSize = std::stoi(pageSizeStr);
+      if (pageSize <= 0)
+        throw invalid_argument{"Page size must be positive and greater than 0"};
+      jobSize = std::stoi(jobSizeStr);
+      if (jobSize <= 0)
+        throw invalid_argument{"Job size must be positive and greater than 0"};
+    } catch (const exception &e) {
+      printf("Error -> %s\n", e.what());
+      return 1;
+    }
+    printf("\n");
+    printf("Job Size -> %d\nPage Size -> %d\n", jobSize, pageSize);
+    printf("\n");
+
+    // Divide job into pages
+    Job j;
+    j.id = 1;
+    j.size = jobSize;
+    auto divRes = divideIntoPages(j, pageSize);
+    auto &pages = divRes.first;
+    auto &PMT = divRes.second;
+    printf("Pages:\n");
+    for (const auto &page : pages) {
+      printf("Page %d -> %d K\n", page.id, page.size);
+    }
+    printf("\n");
+    printPMT(PMT);
+
+    // Create main memory and memory map table
+    MainMemory ram;
+    MemoryMapTable MMT;
+    ram.resize(pages.size() + 1);
+
+    int ramSize{pageSize * (int)ram.size()};
+    for (int i{}, j{}; i < ram.size(); ++i, j += pageSize) {
+      ram[i].id = i;
+      ram[i].size = pageSize;
+      ram[i].startingAddr = j;
+      MMT[i].pageFrameNumber = i;
+      MMT[i].pageNumber = -1;
+      MMT[i].busy = false;
+    }
+    printMMT(MMT);
+
+    // Calculate internal fragmentation if any
+    int internalFragmentation = pageSize - pages.back().size;
+    if (internalFragmentation > 0)
+      printf("Internal Fragmentation In Page (%zu) -> %d\n", pages.size(),
+             internalFragmentation);
+
+    // Assign pages to page frames randomly
+    printf("Assigning pages to page frames randomly...\n");
+    vector<int> ids(pages.size());
+    iota(ids.begin(), ids.end(), 0);
+    random_device rnd;
+    shuffle(ids.begin(), ids.end(), std::mt19937{rnd()});
+    int i{};
+    while (!ids.empty()) {
+      auto id = ids.back();
+      ids.pop_back();
+
+      PMT[id].pageFrameId = MMT[i].pageFrameNumber;
+      MMT[i].pageNumber = id;
+      MMT[i].busy = true;
+      i++;
+    }
+    printMMT(MMT);
+    printPMT(PMT);
+
+    // Perform address translation for 3 random addresses
+    printf("Resolve 3 random address\n");
+    vector<int> addresses(3);
+    for (auto &addr : addresses) {
+      addr = rnd() % jobSize;
+      printf("Address -> %d\n", addr);
+
+      int pageNumber = addr / pageSize;
+      int offset = addr % pageSize;
+      int pageFrameId = PMT[pageNumber].pageFrameId;
+      int physicalAddr = ram[pageFrameId].startingAddr + offset;
+      printf("Page Number -> %d\nOffset -> %d\nPhysical Address -> %d\n",
+             pageNumber, offset, physicalAddr);
+      printf("\n");
+    }
   } catch (const exception &e) {
     printf("Error -> %s\n", e.what());
     return 1;
-  }
-  printf("\n");
-  printf("Job Size -> %d\nPage Size -> %d\n", jobSize, pageSize);
-  printf("\n");
-
-  // Divide job into pages
-  Job j;
-  j.id = 1;
-  j.size = jobSize;
-  auto divRes = divideIntoPages(j, pageSize);
-  auto &pages = divRes.first;
-  auto &PMT = divRes.second;
-  printf("Pages:\n");
-  for (const auto &page : pages) {
-    printf("Page %d -> %d\n", page.id, page.size);
-  }
-  printf("\n");
-  printPMT(PMT);
-
-  // Create main memory and memory map table
-  MainMemory ram;
-  MemoryMapTable MMT;
-  ram.resize(pages.size() + 1);
-
-  int ramSize{pageSize * (int)ram.size()};
-  for (int i{}, j{}; i < ram.size(); ++i, j += pageSize) {
-    ram[i].id = i;
-    ram[i].size = pageSize;
-    ram[i].startingAddr = j;
-    MMT[i].pageFrameNumber = i;
-    MMT[i].pageNumber = -1;
-    MMT[i].busy = false;
-  }
-  printMMT(MMT);
-
-  // Calculate internal fragmentation if any
-  int internalFragmentation = pageSize - pages.back().size;
-  if (internalFragmentation > 0)
-    printf("Internal Fragmentation In Page (%zu) -> %d\n", pages.size(),
-           internalFragmentation);
-
-  // Assign pages to page frames randomly
-  printf("Assigning pages to page frames randomly...\n");
-  vector<int> ids(pages.size());
-  iota(ids.begin(), ids.end(), 0);
-  random_device rnd;
-  shuffle(ids.begin(), ids.end(), std::mt19937{rnd()});
-  int i{};
-  while (!ids.empty()) {
-    auto id = ids.back();
-    ids.pop_back();
-
-    PMT[id].pageFrameId = MMT[i].pageFrameNumber;
-    MMT[i].pageNumber = id;
-    MMT[i].busy = true;
-    i++;
-  }
-  printMMT(MMT);
-  printPMT(PMT);
-
-  // Perform address translation for 3 random addresses
-  printf("Resolve 3 random address\n");
-  vector<int> addresses(3);
-  for (auto &addr : addresses) {
-    addr = rnd() % jobSize;
-    printf("Address -> %d\n", addr);
-
-    int pageNumber = addr / pageSize;
-    int offset = addr % pageSize;
-    int pageFrameId = PMT[pageNumber].pageFrameId;
-    int physicalAddr = ram[pageFrameId].startingAddr + offset;
-    printf("Page Number -> %d\nOffset -> %d\nPhysical Address -> %d\n",
-           pageNumber, offset, physicalAddr);
-    printf("\n");
   }
 }
