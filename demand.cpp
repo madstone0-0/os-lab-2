@@ -11,6 +11,7 @@
 #include <random>
 #include <stdexcept>
 #include <vector>
+#include <bitset>
 
 using namespace std;
 
@@ -117,8 +118,8 @@ void printPMT(const PageMapTable &PMT) {
   printf("PMT:\n");
   printf("Page Number\tPage Frame ID\tReference Bit\n");
   for (const auto &kv : PMT) {
-    printf("%d\t\t%d\t\t0b%08b\n", kv.second.pageNumber, kv.second.pageFrameId,
-           kv.second.referenced);
+    printf("%d\t\t%d\t\t0b%s\n", kv.second.pageNumber, kv.second.pageFrameId,
+           bitset<sizeof(int)*2>(kv.second.referenced).to_string().c_str());
   }
   printf("\n");
 }
